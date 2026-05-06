@@ -1,0 +1,320 @@
+export const learningConfig = {
+  profile: {
+    name: 'Mohamed Ashkar',
+    currentLevel: 'B1+',
+    targetLevel: 'Strong B2',
+    mainGoal: 'Business English',
+    planIntensity: 'Standard',
+    planDurationMonths: 9,
+    dailyStudyMinutes: 75,
+    studyDaysPerWeek: 6,
+    primaryFocusAreas: ['Speaking', 'Grammar', 'Listening', 'Business phrases'],
+    duration: '9 months',
+    dailyTarget: '60-90 minutes',
+  },
+
+  planIntensities: {
+    Light: {
+      durationLabel: '12 months',
+      dailyStudyLabel: '30-45 minutes',
+      studyDaysLabel: '4 days/week',
+      focus: 'sustainable habit',
+      recommendedSettings: {
+        planDurationMonths: 12,
+        dailyStudyMinutes: 40,
+        studyDaysPerWeek: 4,
+      },
+    },
+    Standard: {
+      durationLabel: '9 months',
+      dailyStudyLabel: '60-90 minutes',
+      studyDaysLabel: '5-6 days/week',
+      focus: 'balanced improvement',
+      recommendedSettings: {
+        planDurationMonths: 9,
+        dailyStudyMinutes: 75,
+        studyDaysPerWeek: 6,
+      },
+    },
+    Intensive: {
+      durationLabel: '6 months',
+      dailyStudyLabel: '90-120 minutes',
+      studyDaysLabel: '6 days/week',
+      focus: 'faster professional improvement',
+      recommendedSettings: {
+        planDurationMonths: 6,
+        dailyStudyMinutes: 105,
+        studyDaysPerWeek: 6,
+      },
+    },
+    Sprint: {
+      durationLabel: '3 months',
+      dailyStudyLabel: '120 minutes',
+      studyDaysLabel: '6-7 days/week',
+      focus: 'fast improvement for meetings and work communication, not full C1 mastery',
+      warning: 'Sprint improves work communication quickly, but it may not be enough to reach full C1.',
+      recommendedSettings: {
+        planDurationMonths: 3,
+        dailyStudyMinutes: 120,
+        studyDaysPerWeek: 7,
+      },
+    },
+  },
+
+  skillEvaluation: {
+    levelSummary: [
+      { skill: 'Speaking', level: 'B1+ / B2', note: 'Can explain work topics, needs smoother fluency.' },
+      { skill: 'Listening', level: 'B1+', note: 'Understands common business topics with focused listening.' },
+      { skill: 'Grammar', level: 'B1', note: 'Needs stronger accuracy in tense, articles, and sentence control.' },
+      { skill: 'Vocabulary', level: 'B2', note: 'Good business and technical range.' },
+      { skill: 'Pronunciation', level: 'B1+', note: 'Clear enough, but pacing and stress need polish.' },
+      { skill: 'Writing', level: 'B1+ / B2', note: 'Professional emails are good with grammar review.' },
+    ],
+    strengths: [
+      'Strong professional and project vocabulary',
+      'Good ability to explain technical and operational topics',
+      'Clear motivation and practical work-related goals',
+    ],
+    improvementAreas: [
+      'Grammar accuracy in longer professional sentences',
+      'Speaking fluency without long pauses',
+      'Listening for detailed action items and meeting decisions',
+      'Pronunciation rhythm, stress, and confidence',
+    ],
+    trainingFocus: [
+      'Daily speaking recordings about real project situations',
+      'Grammar correction through work-related examples',
+      'Meeting summaries, action items, and clarification phrases',
+      'Weekly evaluation to identify the weakest skill',
+    ],
+  },
+
+  weeklyPlan: [
+    {
+      day: 'Saturday',
+      focus: 'Grammar + Listening + Speaking',
+      topic: 'Explain a work update from the Smart Parks project',
+      tasks: [
+        'Study one grammar topic: tenses, articles, or prepositions',
+        'Listen to one 5-minute business English video',
+        'Record yourself speaking for 3 minutes about a work topic',
+        'Write 5 corrected sentences from your mistakes',
+      ],
+    },
+    {
+      day: 'Sunday',
+      focus: 'Writing + Vocabulary + Pronunciation',
+      topic: 'Describe a vendor coordination email',
+      tasks: [
+        'Write one professional email',
+        'Learn 10 useful business phrases',
+        'Practice pronunciation for 10 meeting sentences',
+        'Read your email aloud and improve the wording',
+      ],
+    },
+    {
+      day: 'Monday',
+      focus: 'Meeting English',
+      topic: 'Open a meeting and summarize the agenda',
+      tasks: [
+        'Practice opening a meeting professionally',
+        'Roleplay a project update discussion',
+        'Listen to a meeting conversation and extract action items',
+        'Practice 5 phrases for asking clarification',
+      ],
+    },
+    {
+      day: 'Tuesday',
+      focus: 'Grammar + Technical Speaking',
+      topic: 'Explain a technical issue and proposed action',
+      tasks: [
+        'Study one grammar topic and write work-related examples',
+        'Explain one technical issue in English',
+        'Record yourself and identify 3 mistakes',
+        'Rewrite your explanation in a more professional way',
+      ],
+    },
+    {
+      day: 'Wednesday',
+      focus: 'Listening + Meeting Summary',
+      topic: 'Summarize a business or technical discussion',
+      tasks: [
+        'Listen to a business or technical discussion',
+        'Write a short meeting summary',
+        'Extract 5 useful expressions',
+        'Practice summarizing the topic verbally in 2 minutes',
+      ],
+    },
+    {
+      day: 'Thursday',
+      focus: 'Presentation Practice',
+      topic: 'Present project status, challenges, and next steps',
+      tasks: [
+        'Prepare a 5-minute presentation',
+        'Use structure: introduction, status, challenges, next steps',
+        'Record yourself and check fluency',
+        'Improve pauses, pronunciation, and professional phrases',
+      ],
+    },
+    {
+      day: 'Friday',
+      focus: 'Light Review + Confidence',
+      topic: 'Reflect on progress and weak points',
+      tasks: [
+        'Review vocabulary from the week',
+        'Watch English content for enjoyment',
+        'Speak casually for 10 minutes',
+        'Write your weekly reflection and weak points',
+      ],
+    },
+  ],
+
+  speaking: {
+    structure: [
+      'Introduction',
+      'Background',
+      'Current Status',
+      'Challenge',
+      'Action Taken',
+      'Next Step',
+      'Conclusion',
+    ],
+    topics: [
+      ['Smart Parks project overview', 'Medium', '5 min'],
+      ['Current project status', 'Medium', '4 min'],
+      ['Vendor coordination update', 'Medium', '4 min'],
+      ['API integration discussion', 'Hard', '6 min'],
+      ['Server requirement clarification', 'Hard', '5 min'],
+      ['Production environment warning', 'Hard', '5 min'],
+      ['Asset handover process', 'Medium', '4 min'],
+      ['Training session coordination', 'Easy', '3 min'],
+      ['Project risks', 'Hard', '5 min'],
+      ['Budget justification', 'Hard', '6 min'],
+      ['Procurement update', 'Medium', '4 min'],
+      ['Technical issue escalation', 'Hard', '5 min'],
+    ].map(([title, difficulty, duration], index) => ({
+      id: `speaking-${index + 1}`,
+      title,
+      difficulty,
+      duration,
+    })),
+  },
+
+  grammarRoadmap: [
+    'Present Simple vs Present Continuous',
+    'Past Simple vs Present Perfect',
+    'Articles: a, an, the',
+    'Prepositions: in, on, at, for, to, with, about',
+    'Question formation',
+    'Modal verbs',
+    'Passive voice',
+    'Conditionals',
+    'Relative clauses',
+    'Linking words',
+    'Professional sentence structure',
+  ].map((title, index) => ({ id: `grammar-${index + 1}`, title })),
+
+  businessPhrases: [
+    'Could you please confirm the required action from your side?',
+    "Based on today's discussion, the next step is to coordinate with the vendor.",
+    'We need to review this internally before proceeding.',
+    'Please let us know if any further details are required.',
+    'I will follow up with the concerned team and update you accordingly.',
+    'From my side, I would like to highlight one concern.',
+    'The current status is as follows.',
+    'Once we receive the confirmation, we will proceed with the next step.',
+  ].map((title, index) => ({ id: `phrase-${index + 1}`, title })),
+
+  commonMistakes: [
+    {
+      id: 'mistake-1',
+      area: 'Grammar',
+      mistake: 'I am working in this project since two years.',
+      correction: 'I have been working on this project for two years.',
+      tip: 'Use present perfect continuous with since/for, and say working on a project.',
+    },
+    {
+      id: 'mistake-2',
+      area: 'Articles',
+      mistake: 'Vendor shared the update with team.',
+      correction: 'The vendor shared the update with the team.',
+      tip: 'Use the when both speaker and listener know the specific noun.',
+    },
+    {
+      id: 'mistake-3',
+      area: 'Prepositions',
+      mistake: 'We discussed about the server requirements.',
+      correction: 'We discussed the server requirements.',
+      tip: 'Discuss does not need about after it.',
+    },
+    {
+      id: 'mistake-4',
+      area: 'Professional Tone',
+      mistake: 'Send me the confirmation today.',
+      correction: 'Could you please send the confirmation today?',
+      tip: 'Use polite request forms in professional messages.',
+    },
+    {
+      id: 'mistake-5',
+      area: 'Sentence Structure',
+      mistake: 'Because the production is ready, so we can proceed.',
+      correction: 'Because the production environment is ready, we can proceed.',
+      tip: 'Do not use because and so together in the same clause structure.',
+    },
+    {
+      id: 'mistake-6',
+      area: 'Vocabulary',
+      mistake: 'We need to make a meeting with the vendor.',
+      correction: 'We need to schedule a meeting with the vendor.',
+      tip: 'Use schedule, arrange, or hold a meeting.',
+    },
+  ],
+
+  monthlyRoadmap: [
+    {
+      month: 1,
+      focus: 'Foundation accuracy',
+      goals: ['Stabilize tenses', 'Build daily speaking habit', 'Start mistake correction'],
+    },
+    {
+      month: 2,
+      focus: 'Professional writing',
+      goals: ['Improve emails', 'Use business phrases', 'Write meeting summaries'],
+    },
+    {
+      month: 3,
+      focus: 'Meeting confidence',
+      goals: ['Open meetings', 'Ask clarification', 'Summarize action items'],
+    },
+    {
+      month: 4,
+      focus: 'Technical explanation',
+      goals: ['Explain issues clearly', 'Describe risks', 'Use structured speaking'],
+    },
+    {
+      month: 5,
+      focus: 'Listening depth',
+      goals: ['Extract details', 'Track decisions', 'Recognize professional expressions'],
+    },
+    {
+      month: 6,
+      focus: 'Presentation fluency',
+      goals: ['Present status updates', 'Improve pauses', 'Use executive structure'],
+    },
+    {
+      month: 7,
+      focus: 'Advanced workplace communication',
+      goals: ['Negotiate priorities', 'Escalate issues', 'Justify budget and procurement needs'],
+    },
+    {
+      month: 8,
+      focus: 'C1 readiness',
+      goals: ['Speak with less hesitation', 'Write with stronger precision', 'Handle complex discussions'],
+    },
+    {
+      month: 9,
+      focus: 'Final polish',
+      goals: ['Review weak areas', 'Complete final evaluation', 'Prepare next learning plan'],
+    },
+  ],
+}
