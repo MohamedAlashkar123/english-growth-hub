@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   APP_VERSION,
   STORAGE_KEY,
+  cefrRubrics,
   commonMistakes,
   currentLevelOptions,
   defaultContentLibrary,
@@ -89,6 +90,20 @@ import {
   getTopActiveMistakes,
   normalizeTeacherNotes,
 } from './utils/teacherReport'
+import {
+  buildEmptyFeedbackLoop,
+  buildEmptyRubricAssessment,
+  feedbackLoopStatuses,
+  feedbackSources,
+  getFeedbackLoopSummary,
+  getRubricAssessmentSummary,
+  getRubricScoreLabel,
+  normalizeFeedbackLoop,
+  normalizeFeedbackLoops,
+  normalizeRubricAssessment,
+  normalizeRubricAssessments,
+  relatedPracticeTypes,
+} from './utils/cefrFeedback'
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
@@ -190,6 +205,13 @@ const pronunciationFocusOptions = [
 ]
 const pronunciationStatusOptions = ['New', 'Practicing', 'Improved', 'Completed']
 const scoreFilterOptions = [allFilterValue, '1-2', '3', '4-5']
+const rubricScoreOptions = [
+  { value: 1, label: '1 = Needs Focus' },
+  { value: 2, label: '2 = Developing' },
+  { value: 3, label: '3 = Meets Level' },
+  { value: 4, label: '4 = Strong for Level' },
+  { value: 5, label: '5 = Above Level' },
+]
 
 function createTrackerFilters(extra = {}) {
   return {
@@ -203,6 +225,57 @@ function createTrackerFilters(extra = {}) {
     scoreRange: allFilterValue,
     ...extra,
   }
+}
+
+function createFeedbackLoopFilters() {
+  return {
+    search: '',
+    skill: allFilterValue,
+    status: allFilterValue,
+    feedbackSource: allFilterValue,
+    relatedPracticeType: allFilterValue,
+  }
+}
+
+function getRubricSkill(skillId) {
+  return cefrRubrics.skills.find((skill) => skill.id === skillId) || cefrRubrics.skills[0]
+}
+
+function getRubricCanDoStatements(skill, level) {
+  return (skill?.canDoStatements || []).filter((item) => item.level === level)
+}
+
+function getRubricDescriptor(criterion, level) {
+  return criterion?.descriptors?.[level] || 'No descriptor available for this level.'
+}
+
+function calculateCriteriaAverage(criteriaScores = {}) {
+  const scores = Object.values(criteriaScores).map(Number).filter((score) => Number.isFinite(score) && score > 0)
+  return scores.length ? Number((scores.reduce((total, score) => total + score, 0) / scores.length).toFixed(1)) : 0
+}
+
+function filterFeedbackLoops(loops, filters) {
+  const search = filters.search.trim().toLowerCase()
+
+  return loops.filter((loop) => {
+    const searchText = [
+      loop.title,
+      loop.skill,
+      loop.relatedPracticeType,
+      loop.relatedPracticeId,
+      loop.feedbackText,
+      loop.correctionPlan,
+      loop.improvementEvidence,
+    ].join(' ').toLowerCase()
+
+    return (
+      (!search || searchText.includes(search)) &&
+      (filters.skill === allFilterValue || loop.skill === filters.skill) &&
+      (filters.status === allFilterValue || loop.status === filters.status) &&
+      (filters.feedbackSource === allFilterValue || loop.feedbackSource === filters.feedbackSource) &&
+      (filters.relatedPracticeType === allFilterValue || loop.relatedPracticeType === filters.relatedPracticeType)
+    )
+  })
 }
 
 function getUniqueOptions(items, field) {
@@ -391,6 +464,7 @@ function getRecommendationTargetTab(targetSection) {
     'Business Phrases': 'phrases',
     Mistakes: 'mistakes',
     'Content Library': 'content',
+    'Level & Assessment': 'level',
   }
 
   return targetMap[targetSection] || 'overview'
@@ -476,6 +550,8 @@ const defaultProgress = {
   levelProfile: {},
   levelHistory: [],
   teacherNotes: normalizeTeacherNotes(),
+  rubricAssessments: [],
+  feedbackLoops: [],
 }
 
 function createDefaultProgress() {
@@ -534,6 +610,8 @@ function loadProgress() {
     pronunciationEntries: normalizePronunciationEntries(saved.pronunciationEntries || saved.pronunciationPracticeEntries),
     noteDraft: { ...emptyNoteDraft, ...saved.noteDraft },
     teacherNotes: normalizeTeacherNotes(saved.teacherNotes),
+    rubricAssessments: normalizeRubricAssessments(saved.rubricAssessments, cefrRubrics),
+    feedbackLoops: normalizeFeedbackLoops(saved.feedbackLoops),
   }
 }
 
@@ -642,6 +720,34 @@ function runSmokeTests() {
     'Smoke test failed: formatted teacher report should include learner name and level',
   )
   console.assert(normalizeTeacherNotes(null).generalNotes === '', 'Smoke test failed: missing teacher notes should normalize safely')
+  console.assert(Array.isArray(cefrRubrics.skills) && cefrRubrics.skills.length >= 8, 'Smoke test failed: CEFR rubrics should load safely')
+  console.assert(cefrRubrics.skills.every((skill) => skill.id && skill.name), 'Smoke test failed: every CEFR rubric skill should have id and name')
+  console.assert(normalizeRubricAssessment({}, 0, cefrRubrics).id, 'Smoke test failed: rubric assessment should normalize safely')
+  console.assert(normalizeFeedbackLoop({}).status === 'Open', 'Smoke test failed: feedback loop should normalize safely')
+  console.assert(normalizeRubricAssessments(null, cefrRubrics).length === 0, 'Smoke test failed: missing rubric assessments should not crash')
+  console.assert(normalizeFeedbackLoops(null).length === 0, 'Smoke test failed: missing feedback loops should not crash')
+  console.assert(
+    generateLearningRecommendation({
+      profile: defaultProfile,
+      learningPlan: defaultLearningPlan,
+      selectedPlanPosition: { monthNumber: 1, weekNumber: 1, dayName: 'Saturday' },
+      todayPlan: defaultLearningPlan.months[0].weeks[0].days[0],
+      completedTasks: {},
+      evaluations: [{ id: 'eval-test', scores: { grammar: 4, speaking: 4 } }],
+      evaluationSkills: defaultEvaluationSkills,
+      feedbackLoops: [normalizeFeedbackLoop({ id: 'loop-test', title: 'Repeat articles', status: 'Open' })],
+    }).targetSection === 'Level & Assessment',
+    'Smoke test failed: recommendation should use open feedback loop',
+  )
+  console.assert(
+    Array.isArray(createBackupPayload({ ...createDefaultProgress(), rubricAssessments: [], feedbackLoops: [] }).progress.rubricAssessments) &&
+      Array.isArray(createBackupPayload({ ...createDefaultProgress(), rubricAssessments: [], feedbackLoops: [] }).progress.feedbackLoops),
+    'Smoke test failed: export payload should include rubric assessments and feedback loops',
+  )
+  console.assert(
+    parseAndNormalizeBackup(JSON.stringify({ progress: createDefaultProgress() }), defaultProgress, { emptyEvaluation, emptyWritingDraft, emptyListeningDraft, emptyPronunciationDraft, emptyNoteDraft, todayIso }).progress.feedbackLoops.length === 0,
+    'Smoke test failed: import should handle missing feedback loops',
+  )
   console.assert(normalizeMistakes([{ wrongSentence: 'Bad', correctSentence: 'Good' }]).length === 1, 'Smoke test failed: mistakes should normalize safely')
   console.assert(normalizeMistakes([{ wrongSentence: 'Bad' }]).every((mistake) => mistake.id), 'Smoke test failed: every mistake should have a stable id')
   console.assert(mistakeStatuses.includes(normalizeMistake({ status: 'Invalid' }).status), 'Smoke test failed: mistake status should be valid')
@@ -1006,6 +1112,15 @@ function App() {
     teacherNote: '',
     userNote: '',
   }))
+  const [selectedRubricSkillId, setSelectedRubricSkillId] = useState(cefrRubrics.skills[0]?.id || '')
+  const [selectedRubricLevel, setSelectedRubricLevel] = useState(cefrRubrics.levels[0] || 'B1')
+  const [isRubricAssessmentFormOpen, setIsRubricAssessmentFormOpen] = useState(false)
+  const [rubricAssessmentDraft, setRubricAssessmentDraft] = useState(() => buildEmptyRubricAssessment(cefrRubrics))
+  const [editingRubricAssessmentId, setEditingRubricAssessmentId] = useState('')
+  const [isFeedbackLoopFormOpen, setIsFeedbackLoopFormOpen] = useState(false)
+  const [feedbackLoopDraft, setFeedbackLoopDraft] = useState(buildEmptyFeedbackLoop)
+  const [editingFeedbackLoopId, setEditingFeedbackLoopId] = useState('')
+  const [feedbackLoopFilters, setFeedbackLoopFilters] = useState(createFeedbackLoopFilters)
   const [importText, setImportText] = useState('')
   const [importMessage, setImportMessage] = useState('')
   const [copyMessage, setCopyMessage] = useState('')
@@ -1022,6 +1137,13 @@ function App() {
   const writingEntries = normalizeWritingEntries(progress.writingEntries)
   const listeningEntries = normalizeListeningEntries(progress.listeningEntries)
   const pronunciationEntries = normalizePronunciationEntries(progress.pronunciationEntries)
+  const rubricAssessments = normalizeRubricAssessments(progress.rubricAssessments, cefrRubrics)
+  const feedbackLoops = normalizeFeedbackLoops(progress.feedbackLoops)
+  const rubricSummary = getRubricAssessmentSummary(rubricAssessments)
+  const feedbackLoopSummary = getFeedbackLoopSummary(feedbackLoops)
+  const selectedRubricSkill = getRubricSkill(selectedRubricSkillId)
+  const selectedRubricCanDoStatements = getRubricCanDoStatements(selectedRubricSkill, selectedRubricLevel)
+  const filteredFeedbackLoops = filterFeedbackLoops(feedbackLoops, feedbackLoopFilters)
   const planDurationLabel = formatPlanDuration(profile)
   const dailyTargetLabel = formatDailyTarget(profile)
   const selectedIntensity = getPlanIntensityConfig(profile, planIntensities)
@@ -1092,6 +1214,8 @@ function App() {
       listeningEntries,
       pronunciationEntries,
     },
+    rubricAssessments,
+    feedbackLoops,
     libraryProgress: {
       completedGrammarTopics,
       completedBusinessPhrases,
@@ -1153,6 +1277,8 @@ function App() {
     writingEntries,
     listeningEntries,
     pronunciationEntries,
+    rubricAssessments,
+    feedbackLoops,
     planPosition,
     currentMonth,
     currentWeek,
@@ -1179,6 +1305,8 @@ function App() {
     { label: 'Writing completed', value: writingSummary.completed, total: writingSummary.total, done: writingSummary.completed, icon: '✍️' },
     { label: 'Listening minutes', value: listeningSummary.totalMinutes, total: Math.max(listeningSummary.totalMinutes, 1), done: listeningSummary.totalMinutes, icon: '🎧' },
     { label: 'Pronunciation clarity', value: pronunciationSummary.averageScore || 'N/A', total: 5, done: pronunciationSummary.averageScore, icon: '🔊' },
+    { label: 'Rubric assessments', value: rubricAssessments.length, total: 10, done: Math.min(rubricAssessments.length, 10), icon: '📋' },
+    { label: 'Feedback loops', value: feedbackLoopSummary.active, total: Math.max(feedbackLoops.length, 1), done: feedbackLoopSummary.active, icon: '🔁' },
   ]
   const filteredSpeakingTopics = filterSpeakingTopics(speakingTopicsBank, speakingFilters, speakingTopicProgress)
   const selectedSpeakingTopic = speakingTopicsBank.find((topic) => topic.id === selectedSpeakingTopicId)
@@ -1320,6 +1448,133 @@ function App() {
       ...current,
       levelHistory: (current.levelHistory || []).filter((entry) => entry.id !== entryId),
     }))
+  }
+
+  const openRubricAssessmentForm = (assessment = null) => {
+    const draft = assessment
+      ? { ...assessment }
+      : {
+          ...buildEmptyRubricAssessment(cefrRubrics),
+          skillId: selectedRubricSkill.id,
+          skillName: selectedRubricSkill.name,
+          assessedLevel: selectedRubricLevel,
+        }
+    setRubricAssessmentDraft(draft)
+    setEditingRubricAssessmentId(assessment?.id || '')
+    setIsRubricAssessmentFormOpen(true)
+  }
+
+  const updateRubricAssessmentDraft = (field, value) => {
+    setRubricAssessmentDraft((current) => {
+      if (field === 'skillId') {
+        const skill = getRubricSkill(value)
+        return { ...current, skillId: skill.id, skillName: skill.name, criteriaScores: {} }
+      }
+      return { ...current, [field]: value }
+    })
+  }
+
+  const updateRubricCriterionScore = (criterionId, value) => {
+    setRubricAssessmentDraft((current) => {
+      const criteriaScores = { ...(current.criteriaScores || {}), [criterionId]: Number(value) }
+      return { ...current, criteriaScores, overallScore: calculateCriteriaAverage(criteriaScores) || current.overallScore }
+    })
+  }
+
+  const saveRubricAssessment = (event) => {
+    event.preventDefault()
+    const now = new Date().toISOString()
+    const normalizedAssessment = normalizeRubricAssessment(
+      {
+        ...rubricAssessmentDraft,
+        id: editingRubricAssessmentId || `rubric-assessment-${Date.now()}`,
+        createdAt: rubricAssessmentDraft.createdAt || now,
+        updatedAt: now,
+      },
+      0,
+      cefrRubrics,
+    )
+
+    setProgress((current) => ({
+      ...current,
+      rubricAssessments: editingRubricAssessmentId
+        ? normalizeRubricAssessments(current.rubricAssessments, cefrRubrics).map((assessment) =>
+            assessment.id === editingRubricAssessmentId ? normalizedAssessment : assessment,
+          )
+        : [normalizedAssessment, ...normalizeRubricAssessments(current.rubricAssessments, cefrRubrics)],
+    }))
+    setIsRubricAssessmentFormOpen(false)
+    setEditingRubricAssessmentId('')
+    setRubricAssessmentDraft(buildEmptyRubricAssessment(cefrRubrics))
+  }
+
+  const deleteRubricAssessment = (assessmentId) => {
+    if (!window.confirm('Delete this rubric assessment?')) return
+    setProgress((current) => ({
+      ...current,
+      rubricAssessments: normalizeRubricAssessments(current.rubricAssessments, cefrRubrics).filter((assessment) => assessment.id !== assessmentId),
+    }))
+  }
+
+  const openFeedbackLoopForm = (loop = null) => {
+    setFeedbackLoopDraft(loop ? { ...loop } : buildEmptyFeedbackLoop())
+    setEditingFeedbackLoopId(loop?.id || '')
+    setIsFeedbackLoopFormOpen(true)
+  }
+
+  const openFeedbackLoopFromMistake = (mistake) => {
+    setFeedbackLoopDraft({
+      ...buildEmptyFeedbackLoop(),
+      skill: mistake.relatedSkill || mistake.category || 'Grammar Accuracy',
+      relatedPracticeType: 'Mistake',
+      relatedPracticeId: mistake.id,
+      title: `Correct: ${mistake.wrongSentence}`,
+      attemptNotes: mistake.wrongSentence,
+      feedbackSource: mistake.source === 'Teacher' ? 'Teacher' : 'Self-review',
+      feedbackText: mistake.rule || `Correct this sentence: ${mistake.correctSentence}`,
+      correctionPlan: `Practice the corrected pattern using 5 work-related examples: ${mistake.correctSentence}`,
+      status: 'Open',
+    })
+    setEditingFeedbackLoopId('')
+    setIsFeedbackLoopFormOpen(true)
+    setActiveTab('level')
+  }
+
+  const updateFeedbackLoopDraft = (field, value) => {
+    setFeedbackLoopDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  const saveFeedbackLoop = (event) => {
+    event.preventDefault()
+    const now = new Date().toISOString()
+    const normalizedLoop = normalizeFeedbackLoop({
+      ...feedbackLoopDraft,
+      id: editingFeedbackLoopId || `feedback-loop-${Date.now()}`,
+      createdAt: feedbackLoopDraft.createdAt || now,
+      updatedAt: now,
+    })
+
+    setProgress((current) => ({
+      ...current,
+      feedbackLoops: editingFeedbackLoopId
+        ? normalizeFeedbackLoops(current.feedbackLoops).map((loop) => (loop.id === editingFeedbackLoopId ? normalizedLoop : loop))
+        : [normalizedLoop, ...normalizeFeedbackLoops(current.feedbackLoops)],
+    }))
+    setIsFeedbackLoopFormOpen(false)
+    setEditingFeedbackLoopId('')
+    setFeedbackLoopDraft(buildEmptyFeedbackLoop())
+  }
+
+  const deleteFeedbackLoop = (loopId) => {
+    if (!window.confirm('Delete this feedback loop?')) return
+    setProgress((current) => ({
+      ...current,
+      feedbackLoops: normalizeFeedbackLoops(current.feedbackLoops).filter((loop) => loop.id !== loopId),
+    }))
+  }
+
+  const updateFeedbackLoopFilter = (field, value) => {
+    setFeedbackLoopFilters((current) => ({ ...current, [field]: value }))
   }
 
   const toggleProfileFocusArea = (focusArea) => {
@@ -2521,6 +2776,209 @@ function App() {
               </div>
             </Card>
 
+            <Card title="CEFR Rubrics" subtitle="Learning guidance, not official certification" icon="📋">
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-800">
+                These descriptors are for learning guidance and teacher-supported review. They are not an official CEFR certification.
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <SelectInput
+                  label="Skill"
+                  value={selectedRubricSkillId}
+                  onChange={(value) => setSelectedRubricSkillId(value)}
+                  options={cefrRubrics.skills.map((skill) => ({ label: skill.name, value: skill.id }))}
+                />
+                <SelectInput
+                  label="Level"
+                  value={selectedRubricLevel}
+                  onChange={(value) => setSelectedRubricLevel(value)}
+                  options={cefrRubrics.levels}
+                />
+              </div>
+              <div className="mt-5 grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="font-bold text-slate-950">{selectedRubricSkill.name} can-do statements</h3>
+                  <div className="mt-3 space-y-2">
+                    {selectedRubricCanDoStatements.length === 0 && <p className="text-sm text-slate-500">No can-do statements saved for this level yet.</p>}
+                    {selectedRubricCanDoStatements.map((item) => (
+                      <p key={item.statement} className="rounded-lg border border-slate-100 bg-white p-3 text-sm leading-6 text-slate-600">{item.statement}</p>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="font-bold text-slate-950">Assessment questions</h3>
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
+                    {(selectedRubricSkill.assessmentQuestions || []).slice(0, 6).map((question) => <li key={question}>• {question}</li>)}
+                  </ul>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-3 md:grid-cols-2">
+                {(selectedRubricSkill.rubricCriteria || []).map((criterion) => (
+                  <article key={criterion.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                    <p className="font-bold text-slate-950">{criterion.name}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{getRubricDescriptor(criterion, selectedRubricLevel)}</p>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border border-teal-100 bg-teal-50 p-4">
+                  <h3 className="font-bold text-teal-950">Teacher feedback prompts</h3>
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+                    {(selectedRubricSkill.teacherFeedbackPrompts || []).slice(0, 5).map((prompt) => <li key={prompt}>• {prompt}</li>)}
+                  </ul>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="font-bold text-slate-950">Practice evidence examples</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(selectedRubricSkill.practiceEvidenceExamples || []).slice(0, 8).map((example) => (
+                      <span key={example} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600">{example}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <div className="grid gap-6 xl:grid-cols-[0.9fr_1fr]">
+              <Card title="Rubric Assessment" subtitle="Evaluate practice quality" icon="🧾">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <MetricCard label="Assessments" value={rubricSummary.total} detail="Rubric records" icon="📋" />
+                  <MetricCard label="Average Score" value={rubricSummary.averageScore || 'N/A'} detail="Rubric /5" icon="⭐" />
+                  <MetricCard label="Weakest Rubric Skill" value={rubricSummary.weakestSkill} detail={`Strongest: ${rubricSummary.strongestSkill}`} icon="🎯" />
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => openRubricAssessmentForm()} className="min-h-10 rounded-lg bg-teal-700 px-4 text-sm font-bold text-white transition hover:bg-teal-800">
+                    Add rubric assessment
+                  </button>
+                  {isRubricAssessmentFormOpen && (
+                    <button type="button" onClick={() => setIsRubricAssessmentFormOpen(false)} className="min-h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700">
+                      Close form
+                    </button>
+                  )}
+                </div>
+                {isRubricAssessmentFormOpen && (
+                  <form onSubmit={saveRubricAssessment} className="mt-5 space-y-5 rounded-lg border border-teal-100 bg-teal-50 p-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <TextInput label="Date" type="date" value={rubricAssessmentDraft.date} onChange={(value) => updateRubricAssessmentDraft('date', value)} />
+                      <SelectInput label="Skill" value={rubricAssessmentDraft.skillId} onChange={(value) => updateRubricAssessmentDraft('skillId', value)} options={cefrRubrics.skills.map((skill) => ({ label: skill.name, value: skill.id }))} />
+                      <SelectInput label="Level assessed" value={rubricAssessmentDraft.assessedLevel} onChange={(value) => updateRubricAssessmentDraft('assessedLevel', value)} options={cefrRubrics.levels} />
+                      <TextInput label="Practice type" value={rubricAssessmentDraft.practiceType} onChange={(value) => updateRubricAssessmentDraft('practiceType', value)} placeholder="Speaking topic, writing entry, teacher review..." />
+                      <TextInput label="Related practice entry" value={rubricAssessmentDraft.relatedEntryId} onChange={(value) => updateRubricAssessmentDraft('relatedEntryId', value)} placeholder="Optional ID or title" />
+                      <ScoreInput label="Overall score /5" value={rubricAssessmentDraft.overallScore} onChange={(value) => updateRubricAssessmentDraft('overallScore', value)} />
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {(getRubricSkill(rubricAssessmentDraft.skillId).rubricCriteria || []).map((criterion) => (
+                        <SelectInput
+                          key={criterion.id}
+                          label={criterion.name}
+                          value={String(rubricAssessmentDraft.criteriaScores?.[criterion.id] || 3)}
+                          onChange={(value) => updateRubricCriterionScore(criterion.id, value)}
+                          options={rubricScoreOptions.map((option) => ({ label: option.label, value: String(option.value) }))}
+                        />
+                      ))}
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <TextArea label="Evidence notes" value={rubricAssessmentDraft.evidenceNotes} onChange={(value) => updateRubricAssessmentDraft('evidenceNotes', value)} />
+                      <TextArea label="Teacher feedback" value={rubricAssessmentDraft.teacherFeedback} onChange={(value) => updateRubricAssessmentDraft('teacherFeedback', value)} />
+                      <TextArea label="Learner reflection" value={rubricAssessmentDraft.learnerReflection} onChange={(value) => updateRubricAssessmentDraft('learnerReflection', value)} />
+                      <TextArea label="Next action" value={rubricAssessmentDraft.nextAction} onChange={(value) => updateRubricAssessmentDraft('nextAction', value)} />
+                    </div>
+                    <button type="submit" className="min-h-11 rounded-lg bg-teal-700 px-5 text-sm font-bold text-white">
+                      {editingRubricAssessmentId ? 'Save rubric assessment' : 'Add rubric assessment'}
+                    </button>
+                  </form>
+                )}
+                <div className="mt-5 space-y-3">
+                  {rubricAssessments.length === 0 && <EmptyState title="No rubric assessments yet.">Add a CEFR-style rubric assessment after a speaking, writing, listening, or pronunciation practice attempt.</EmptyState>}
+                  {rubricAssessments.slice(0, 5).map((assessment) => (
+                    <article key={assessment.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-bold text-slate-950">{assessment.skillName} · {assessment.assessedLevel}</p>
+                          <p className="mt-1 text-sm text-slate-500">{assessment.date} · Overall {assessment.overallScore}/5 ({getRubricScoreLabel(assessment.overallScore)})</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => openRubricAssessmentForm(assessment)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700">Edit</button>
+                          <button type="button" onClick={() => deleteRubricAssessment(assessment.id)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">Delete</button>
+                        </div>
+                      </div>
+                      {assessment.nextAction && <p className="mt-3 text-sm leading-6 text-slate-600"><strong>Next action:</strong> {assessment.nextAction}</p>}
+                    </article>
+                  ))}
+                </div>
+              </Card>
+
+              <Card title="Feedback Loops" subtitle="Attempt → feedback → correction → repeat" icon="🔁">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <MetricCard label="Active Loops" value={feedbackLoopSummary.active} detail={`${feedbackLoopSummary.total} total`} icon="🔁" />
+                  <MetricCard label="Improved" value={feedbackLoopSummary.improved} detail="Evidence saved" icon="✅" />
+                  <MetricCard label="Closed" value={feedbackLoopSummary.closed} detail="Completed loops" icon="📌" />
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => openFeedbackLoopForm()} className="min-h-10 rounded-lg bg-teal-700 px-4 text-sm font-bold text-white transition hover:bg-teal-800">
+                    Add feedback loop
+                  </button>
+                  {isFeedbackLoopFormOpen && (
+                    <button type="button" onClick={() => setIsFeedbackLoopFormOpen(false)} className="min-h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700">
+                      Close form
+                    </button>
+                  )}
+                </div>
+                {isFeedbackLoopFormOpen && (
+                  <form onSubmit={saveFeedbackLoop} className="mt-5 space-y-5 rounded-lg border border-teal-100 bg-teal-50 p-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <TextInput label="Title" value={feedbackLoopDraft.title} onChange={(value) => updateFeedbackLoopDraft('title', value)} />
+                      <SelectInput label="Skill" value={feedbackLoopDraft.skill} onChange={(value) => updateFeedbackLoopDraft('skill', value)} options={cefrRubrics.skills.map((skill) => skill.name)} />
+                      <SelectInput label="Related practice type" value={feedbackLoopDraft.relatedPracticeType} onChange={(value) => updateFeedbackLoopDraft('relatedPracticeType', value)} options={relatedPracticeTypes} />
+                      <TextInput label="Related practice ID or title" value={feedbackLoopDraft.relatedPracticeId} onChange={(value) => updateFeedbackLoopDraft('relatedPracticeId', value)} />
+                      <TextInput label="Attempt number" type="number" min="1" value={feedbackLoopDraft.attemptNumber} onChange={(value) => updateFeedbackLoopDraft('attemptNumber', value)} />
+                      <SelectInput label="Feedback source" value={feedbackLoopDraft.feedbackSource} onChange={(value) => updateFeedbackLoopDraft('feedbackSource', value)} options={feedbackSources} />
+                      <SelectInput label="Status" value={feedbackLoopDraft.status} onChange={(value) => updateFeedbackLoopDraft('status', value)} options={feedbackLoopStatuses} />
+                    </div>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <TextArea label="Attempt notes" value={feedbackLoopDraft.attemptNotes} onChange={(value) => updateFeedbackLoopDraft('attemptNotes', value)} />
+                      <TextArea label="Feedback" value={feedbackLoopDraft.feedbackText} onChange={(value) => updateFeedbackLoopDraft('feedbackText', value)} />
+                      <TextArea label="Correction plan" value={feedbackLoopDraft.correctionPlan} onChange={(value) => updateFeedbackLoopDraft('correctionPlan', value)} />
+                      <TextArea label="Repeated attempt notes" value={feedbackLoopDraft.repeatedAttemptNotes} onChange={(value) => updateFeedbackLoopDraft('repeatedAttemptNotes', value)} />
+                      <div className="md:col-span-2">
+                        <TextArea label="Improvement evidence" value={feedbackLoopDraft.improvementEvidence} onChange={(value) => updateFeedbackLoopDraft('improvementEvidence', value)} />
+                      </div>
+                    </div>
+                    <button type="submit" className="min-h-11 rounded-lg bg-teal-700 px-5 text-sm font-bold text-white">
+                      {editingFeedbackLoopId ? 'Save feedback loop' : 'Add feedback loop'}
+                    </button>
+                  </form>
+                )}
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-[1.2fr_repeat(4,0.8fr)]">
+                  <TextInput label="Search loops" value={feedbackLoopFilters.search} onChange={(value) => updateFeedbackLoopFilter('search', value)} />
+                  <SelectInput label="Skill" value={feedbackLoopFilters.skill} onChange={(value) => updateFeedbackLoopFilter('skill', value)} options={[allFilterValue, ...cefrRubrics.skills.map((skill) => skill.name)]} />
+                  <SelectInput label="Status" value={feedbackLoopFilters.status} onChange={(value) => updateFeedbackLoopFilter('status', value)} options={[allFilterValue, ...feedbackLoopStatuses]} />
+                  <SelectInput label="Source" value={feedbackLoopFilters.feedbackSource} onChange={(value) => updateFeedbackLoopFilter('feedbackSource', value)} options={[allFilterValue, ...feedbackSources]} />
+                  <SelectInput label="Type" value={feedbackLoopFilters.relatedPracticeType} onChange={(value) => updateFeedbackLoopFilter('relatedPracticeType', value)} options={[allFilterValue, ...relatedPracticeTypes]} />
+                </div>
+                <div className="mt-5 space-y-3">
+                  {filteredFeedbackLoops.length === 0 && <EmptyState title="No feedback loops found.">Add a loop when feedback needs correction, repetition, and improvement evidence.</EmptyState>}
+                  {filteredFeedbackLoops.map((loop) => (
+                    <article key={loop.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="font-bold text-slate-950">{loop.title}</p>
+                          <p className="mt-1 text-sm text-slate-500">{loop.skill} · {loop.relatedPracticeType} · Attempt {loop.attemptNumber} · {loop.status}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => openFeedbackLoopForm(loop)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700">Edit</button>
+                          <button type="button" onClick={() => deleteFeedbackLoop(loop.id)} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">Delete</button>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 text-sm leading-6 text-slate-600">
+                        {loop.feedbackText && <p><strong>Feedback:</strong> {loop.feedbackText}</p>}
+                        {loop.correctionPlan && <p><strong>Correction plan:</strong> {loop.correctionPlan}</p>}
+                        {loop.improvementEvidence && <p><strong>Improvement evidence:</strong> {loop.improvementEvidence}</p>}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </Card>
+            </div>
+
             <div className="grid gap-6 xl:grid-cols-[0.9fr_1fr]">
               <Card title="Assessment Evidence" subtitle="Signals used for suggestion" icon="🔎">
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -2533,6 +2991,8 @@ function App() {
                   <MetricCard label="Writing Practice" value={writingEntries.length} detail={`Avg ${writingSummary.averageScore || 'N/A'}/5`} icon="✍️" />
                   <MetricCard label="Listening Practice" value={listeningEntries.length} detail={`Avg ${listeningSummary.averageScore || 'N/A'}/5`} icon="🎧" />
                   <MetricCard label="Pronunciation" value={pronunciationEntries.length} detail={`Clarity ${pronunciationSummary.averageScore || 'N/A'}/5`} icon="🔊" />
+                  <MetricCard label="Rubric Evidence" value={rubricSummary.total} detail={`Avg ${rubricSummary.averageScore || 'N/A'}/5`} icon="📋" />
+                  <MetricCard label="Feedback Loops" value={feedbackLoopSummary.active} detail={`${feedbackLoopSummary.improved} improved`} icon="🔁" />
                 </div>
               </Card>
 
@@ -3027,6 +3487,9 @@ function App() {
                     <div className="flex flex-wrap gap-2">
                       <button type="button" onClick={() => startEditingMistake(mistake)} className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
                         Edit
+                      </button>
+                      <button type="button" onClick={() => openFeedbackLoopFromMistake(mistake)} className="min-h-10 rounded-lg border border-teal-200 bg-teal-50 px-3 text-sm font-bold text-teal-800 transition hover:bg-teal-100">
+                        Create feedback loop
                       </button>
                       <button type="button" onClick={() => deleteMistake(mistake.id)} className="min-h-10 rounded-lg border border-rose-200 bg-rose-50 px-3 text-sm font-bold text-rose-700 transition hover:bg-rose-100">
                         Delete
@@ -3727,6 +4190,8 @@ function App() {
               <MetricCard label="Writing Practice" value={teacherReportData.writing.total} detail={`Completed ${teacherReportData.writing.completed}, avg ${teacherReportData.writing.averageScore || 'N/A'}/5`} icon="✍️" />
               <MetricCard label="Listening Practice" value={teacherReportData.listening.total} detail={`${teacherReportData.listening.totalMinutes} minutes, avg ${teacherReportData.listening.averageScore || 'N/A'}/5`} icon="🎧" />
               <MetricCard label="Pronunciation" value={teacherReportData.pronunciation.total} detail={`Clarity ${teacherReportData.pronunciation.averageScore || 'N/A'}, confidence ${teacherReportData.pronunciation.averageConfidence || 'N/A'}`} icon="🔊" />
+              <MetricCard label="Rubric Evidence" value={teacherReportData.rubric.total} detail={`Average ${teacherReportData.rubric.averageScore || 'N/A'}/5`} icon="📋" />
+              <MetricCard label="Open Feedback Loops" value={teacherReportData.feedbackLoops.open} detail={`${teacherReportData.feedbackLoops.total} total loops`} icon="🔁" />
             </div>
 
             <div className="grid gap-6 xl:grid-cols-2">
@@ -3759,6 +4224,14 @@ function App() {
                       <h3 className="text-sm font-bold text-slate-950">Pronunciation focus areas</h3>
                       <p className="mt-2 rounded-lg border border-slate-100 bg-white p-3 text-sm text-slate-600">
                         {teacherReportData.pronunciation.focusAreas.length ? teacherReportData.pronunciation.focusAreas.join(', ') : 'No pronunciation focus areas yet.'}
+                      </p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-950">Rubric and feedback evidence</h3>
+                      <p className="mt-2 rounded-lg border border-slate-100 bg-white p-3 text-sm text-slate-600">
+                        {teacherReportData.rubric.latest
+                          ? `Latest rubric: ${teacherReportData.rubric.latest.skillName} ${teacherReportData.rubric.latest.overallScore}/5. Open loops: ${teacherReportData.feedbackLoops.open}.`
+                          : `No rubric assessments yet. Open loops: ${teacherReportData.feedbackLoops.open}.`}
                       </p>
                     </div>
                   </div>

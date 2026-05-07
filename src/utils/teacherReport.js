@@ -225,6 +225,8 @@ export function buildTeacherReportData({
   writingEntries = [],
   listeningEntries = [],
   pronunciationEntries = [],
+  rubricAssessments = [],
+  feedbackLoops = [],
   planPosition = {},
   currentMonth = {},
   currentWeek = {},
@@ -258,6 +260,9 @@ export function buildTeacherReportData({
     averageConfidence: average(asArray(pronunciationEntries).map((entry) => entry.confidenceScore)),
     focusAreas: summarizeFocusAreas(pronunciationEntries),
   }
+  const rubricAverage = average(asArray(rubricAssessments).map((assessment) => assessment.overallScore))
+  const latestRubricAssessment = asArray(rubricAssessments).slice().sort(byNewest)[0] || null
+  const openFeedbackLoops = asArray(feedbackLoops).filter((loop) => loop.status === 'Open' || loop.status === 'Practicing')
   const skillRows = getSkillRows(evaluations, evaluationSkills, skillAverages, skillTrends)
   const strongestSkill = getStrongestSkill(skillRows)
   const derivedWeakestSkill = weakestSkill || getWeakestSkill(skillRows)
@@ -337,6 +342,16 @@ export function buildTeacherReportData({
       ...pronunciationSummary,
       recentEntries: asArray(pronunciationEntries).slice().sort(byNewest).slice(0, 3),
     },
+    rubric: {
+      total: asArray(rubricAssessments).length,
+      averageScore: rubricAverage,
+      latest: latestRubricAssessment,
+    },
+    feedbackLoops: {
+      total: asArray(feedbackLoops).length,
+      open: openFeedbackLoops.length,
+      items: openFeedbackLoops.slice(0, 5),
+    },
     recommendations,
     smartRecommendation,
     teacherNotes: normalizedTeacherNotes,
@@ -395,6 +410,8 @@ export function formatTeacherReportText(reportData = {}) {
     `Writing: ${report.writing.completed}/${report.writing.total} completed, average ${report.writing.averageScore || 'N/A'}/5`,
     `Listening: ${report.listening.completed}/${report.listening.total} completed, average ${report.listening.averageScore || 'N/A'}/5, minutes ${report.listening.totalMinutes || 0}`,
     `Pronunciation: ${report.pronunciation.completed}/${report.pronunciation.total} completed, clarity ${report.pronunciation.averageScore || 'N/A'}/5, confidence ${report.pronunciation.averageConfidence || 'N/A'}/5`,
+    `Rubric assessments: ${report.rubric?.total || 0}, average ${report.rubric?.averageScore || 'N/A'}/5`,
+    `Open feedback loops: ${report.feedbackLoops?.open || 0}`,
     '',
     'Recommended Focus',
     formatList(report.recommendations.focusAreas),

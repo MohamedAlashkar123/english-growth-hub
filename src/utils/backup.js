@@ -76,6 +76,14 @@ export function validateBackupPayload(payload) {
     return 'Teacher notes must be an object.'
   }
 
+  if (source.rubricAssessments !== undefined && !Array.isArray(source.rubricAssessments)) {
+    return 'Rubric assessments must be an array.'
+  }
+
+  if (source.feedbackLoops !== undefined && !Array.isArray(source.feedbackLoops)) {
+    return 'Feedback loops must be an array.'
+  }
+
   return ''
 }
 

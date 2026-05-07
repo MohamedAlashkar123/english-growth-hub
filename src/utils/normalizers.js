@@ -12,6 +12,8 @@ import {
 import { migrateCompletedDailyTasksToPlan, normalizeLearningPlan } from './planUtils'
 import { cloneData } from './storage'
 import { normalizeTeacherNotes } from './teacherReport'
+import { cefrRubrics } from '../config'
+import { normalizeFeedbackLoops, normalizeRubricAssessments } from './cefrFeedback'
 
 export const mistakeCategories = [
   'Grammar',
@@ -360,6 +362,8 @@ export function createDefaultProgress(defaultProgress, emptyDrafts) {
     pronunciationDraft: { ...emptyDrafts.emptyPronunciationDraft, date: emptyDrafts.todayIso() },
     pronunciationEntries: normalizePronunciationEntries(defaultProgress.pronunciationEntries),
     noteDraft: { ...emptyDrafts.emptyNoteDraft, date: emptyDrafts.todayIso() },
+    rubricAssessments: normalizeRubricAssessments(defaultProgress.rubricAssessments, cefrRubrics),
+    feedbackLoops: normalizeFeedbackLoops(defaultProgress.feedbackLoops),
   }
 }
 
@@ -404,6 +408,8 @@ export function normalizeImportedProgress(imported, defaultProgress, emptyDrafts
     pronunciationEntries: normalizePronunciationEntries(source.pronunciationEntries || source.pronunciationPracticeEntries),
     noteDraft: { ...emptyDrafts.emptyNoteDraft, ...source.noteDraft },
     teacherNotes: normalizeTeacherNotes(source.teacherNotes),
+    rubricAssessments: normalizeRubricAssessments(source.rubricAssessments, cefrRubrics),
+    feedbackLoops: normalizeFeedbackLoops(source.feedbackLoops),
     completedPlanTasks: migrateCompletedDailyTasksToPlan(
       learningPlan,
       source.completedDailyTasks,

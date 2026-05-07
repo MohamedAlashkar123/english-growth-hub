@@ -121,6 +121,8 @@ export function generateLearningRecommendation({
   speakingTopicProgress = {},
   contentLibrary = {},
   trackerData = {},
+  rubricAssessments = [],
+  feedbackLoops = [],
 } = {}) {
   const latestEvaluation = getLatestEvaluation(evaluations)
   const weakestSkill = getWeakestSkillFromEvaluation(latestEvaluation, evaluationSkills)
@@ -133,6 +135,50 @@ export function generateLearningRecommendation({
     ? speakingTopics.filter((topic) => speakingTopicProgress[topic.id]?.completed).length
     : 0
   const speakingCompletion = getCompletionPercentage(speakingTopics.length || 0, completedSpeakingTopics)
+  const activeFeedbackLoop = Array.isArray(feedbackLoops)
+    ? feedbackLoops.find((loop) => loop.status === 'Open' || loop.status === 'Practicing')
+    : null
+  const lowRubricAssessment = Array.isArray(rubricAssessments)
+    ? rubricAssessments.slice().sort((a, b) => String(b.date).localeCompare(String(a.date))).find((assessment) => Number(assessment.overallScore) > 0 && Number(assessment.overallScore) < 3)
+    : null
+
+  if (activeFeedbackLoop) {
+    return buildRecommendation({
+      id: `rec-feedback-loop-${activeFeedbackLoop.id}`,
+      type: 'Feedback Loop',
+      priority: 'High',
+      title: `Repeat feedback loop: ${activeFeedbackLoop.title}`,
+      reason: 'An open feedback loop means there is feedback that still needs correction, repetition, and improvement evidence.',
+      suggestedAction: activeFeedbackLoop.correctionPlan || 'Review the feedback, repeat the practice attempt, and write improvement evidence.',
+      estimatedMinutes: 20,
+      targetSection: 'Level & Assessment',
+      relatedSkill: activeFeedbackLoop.skill || 'Feedback',
+      relatedContentId: activeFeedbackLoop.id,
+      evidence: [
+        `Feedback source: ${activeFeedbackLoop.feedbackSource || 'Not specified'}.`,
+        `Status: ${activeFeedbackLoop.status}.`,
+      ],
+    })
+  }
+
+  if (latestEvaluation && lowRubricAssessment) {
+    return buildRecommendation({
+      id: `rec-rubric-${lowRubricAssessment.id}`,
+      type: 'Rubric Assessment',
+      priority: 'High',
+      title: `Improve rubric skill: ${lowRubricAssessment.skillName}`,
+      reason: `${lowRubricAssessment.skillName} scored below Meets Level in the latest rubric evidence.`,
+      suggestedAction: lowRubricAssessment.nextAction || `Repeat one ${String(lowRubricAssessment.skillName).toLowerCase()} practice task and collect evidence.`,
+      estimatedMinutes: 25,
+      targetSection: 'Level & Assessment',
+      relatedSkill: lowRubricAssessment.skillName,
+      relatedContentId: lowRubricAssessment.id,
+      evidence: [
+        `Rubric score: ${lowRubricAssessment.overallScore}/5.`,
+        `Assessed level: ${lowRubricAssessment.assessedLevel}.`,
+      ],
+    })
+  }
 
   if (!latestEvaluation) {
     return buildRecommendation({
@@ -146,6 +192,21 @@ export function generateLearningRecommendation({
       targetSection: 'Evaluation',
       relatedSkill: 'Assessment',
       evidence: ['Saved evaluations: 0.', 'A baseline is required before skill-based recommendations can be precise.'],
+    })
+  }
+
+  if (Array.isArray(rubricAssessments) && rubricAssessments.length === 0) {
+    return buildRecommendation({
+      id: 'rec-first-rubric-assessment',
+      type: 'Rubric Assessment',
+      priority: 'Medium',
+      title: 'Complete your first CEFR-style rubric assessment',
+      reason: 'A rubric assessment adds quality evidence beyond simple completion tracking.',
+      suggestedAction: 'Open Level & Assessment, choose one skill, and score the rubric criteria with evidence notes.',
+      estimatedMinutes: 15,
+      targetSection: 'Level & Assessment',
+      relatedSkill: 'Assessment',
+      evidence: ['Rubric assessments saved: 0.', 'Rubrics are for learning guidance, not official certification.'],
     })
   }
 
