@@ -222,6 +222,8 @@ export function buildTeacherReportData({
   mistakes = [],
   speakingTopics = [],
   speakingTopicProgress = {},
+  businessPhrases = [],
+  businessPhraseProgress = {},
   writingEntries = [],
   listeningEntries = [],
   pronunciationEntries = [],
@@ -249,6 +251,12 @@ export function buildTeacherReportData({
     .slice()
     .sort((a, b) => (speakingTopicProgress[b.id]?.lastPracticedAt || '').localeCompare(speakingTopicProgress[a.id]?.lastPracticedAt || ''))[0]
   const incompleteSpeakingTopics = asArray(speakingTopics).filter((topic) => !speakingTopicProgress?.[topic.id]?.completed).slice(0, 3)
+  const businessPhraseItems = asArray(businessPhrases)
+  const practicedBusinessPhrases = businessPhraseItems.filter((phrase) => businessPhraseProgress?.[phrase.id]?.practiced || phrase.practiced)
+  const favoriteBusinessPhrases = businessPhraseItems.filter((phrase) => businessPhraseProgress?.[phrase.id]?.favorite || phrase.favorite)
+  const businessPhraseCompletionPercentage = businessPhraseItems.length
+    ? Math.round((practicedBusinessPhrases.length / businessPhraseItems.length) * 100)
+    : 0
   const writingSummary = summarizeTrackerProgress(writingEntries, ['Completed'], 'score')
   const listeningSummary = {
     ...summarizeTrackerProgress(listeningEntries, ['Completed'], 'score'),
@@ -329,6 +337,12 @@ export function buildTeacherReportData({
       lastPracticedTopic: lastPracticedSpeakingTopic?.title || 'Not available yet',
       recommendedTopics: incompleteSpeakingTopics,
     },
+    businessPhrases: {
+      total: businessPhraseItems.length,
+      practiced: practicedBusinessPhrases.length,
+      favorites: favoriteBusinessPhrases.length,
+      completionPercentage: businessPhraseCompletionPercentage,
+    },
     writing: {
       ...writingSummary,
       recentEntries: asArray(writingEntries).slice().sort(byNewest).slice(0, 3),
@@ -407,6 +421,7 @@ export function formatTeacherReportText(reportData = {}) {
     '',
     'Practice Summary',
     `Speaking: ${report.speaking.completed}/${report.speaking.total} completed (${report.speaking.completionPercentage}%)`,
+    `Business phrases: ${report.businessPhrases?.practiced || 0}/${report.businessPhrases?.total || 0} practiced (${report.businessPhrases?.completionPercentage || 0}%), favorites ${report.businessPhrases?.favorites || 0}`,
     `Writing: ${report.writing.completed}/${report.writing.total} completed, average ${report.writing.averageScore || 'N/A'}/5`,
     `Listening: ${report.listening.completed}/${report.listening.total} completed, average ${report.listening.averageScore || 'N/A'}/5, minutes ${report.listening.totalMinutes || 0}`,
     `Pronunciation: ${report.pronunciation.completed}/${report.pronunciation.total} completed, clarity ${report.pronunciation.averageScore || 'N/A'}/5, confidence ${report.pronunciation.averageConfidence || 'N/A'}/5`,

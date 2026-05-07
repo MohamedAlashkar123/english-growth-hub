@@ -36,6 +36,10 @@ export function validateBackupPayload(payload) {
     return 'Speaking topic progress must be an object.'
   }
 
+  if (source.businessPhraseProgress !== undefined && (typeof source.businessPhraseProgress !== 'object' || Array.isArray(source.businessPhraseProgress))) {
+    return 'Business phrase progress must be an object.'
+  }
+
   if (source.contentLibrary !== undefined && typeof source.contentLibrary !== 'object') {
     return 'Content library data must be an object.'
   }

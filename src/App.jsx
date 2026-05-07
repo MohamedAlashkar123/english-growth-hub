@@ -23,6 +23,7 @@ import {
   targetLevelOptions,
   weeklyPlan,
 } from './config'
+import { defaultBusinessPhrases } from './config/defaultBusinessPhrases'
 import { createBackupPayload, parseAndNormalizeBackup, validateBackupPayload } from './utils/backup'
 import {
   calculatePercentage,
@@ -47,10 +48,12 @@ import {
 } from './utils/levelAssessment'
 import {
   createDefaultProgress as createDefaultProgressFromTemplate,
+  applyBusinessPhraseProgress,
   normalizeContentLibrary,
   normalizeDailyPlan,
   normalizeEvaluationDraft,
   normalizeEvaluationSkills,
+  normalizeBusinessPhraseProgress,
   getAverageScore,
   mistakeCategories,
   mistakeSources,
@@ -317,6 +320,49 @@ function filterSpeakingTopics(topics, filters, progress = {}) {
   })
 }
 
+function filterBusinessPhrases(phrases, filters, progress = {}) {
+  const search = filters.search.trim().toLowerCase()
+
+  return phrases.filter((phrase) => {
+    const phraseProgress = progress[phrase.id] || {}
+    const searchableText = [
+      phrase.phrase,
+      phrase.category,
+      phrase.level,
+      phrase.difficulty,
+      phrase.useCase,
+      phrase.example,
+      phrase.tags?.join(' '),
+      phrase.relatedSkills?.join(' '),
+      phrase.practicePrompt,
+      phraseProgress.notes,
+    ].join(' ').toLowerCase()
+    const matchesSearch = !search || searchableText.includes(search)
+    const matchesCategory = filters.category === allFilterValue || phrase.category === filters.category
+    const matchesLevel = filters.level === allFilterValue || phrase.level === filters.level
+    const matchesDifficulty = filters.difficulty === allFilterValue || phrase.difficulty === filters.difficulty
+    const matchesStatus =
+      filters.status === allFilterValue ||
+      (filters.status === 'New' && !phraseProgress.practiced) ||
+      (filters.status === 'Practiced' && phraseProgress.practiced) ||
+      (filters.status === 'Favorite' && phraseProgress.favorite)
+
+    return matchesSearch && matchesCategory && matchesLevel && matchesDifficulty && matchesStatus
+  })
+}
+
+function getBusinessPhraseSummary(phrases = [], progress = {}) {
+  const practiced = phrases.filter((phrase) => progress[phrase.id]?.practiced).length
+  const favorite = phrases.filter((phrase) => progress[phrase.id]?.favorite).length
+
+  return {
+    total: phrases.length,
+    practiced,
+    favorite,
+    practicedPercentage: phrases.length ? Math.round((practiced / phrases.length) * 100) : 0,
+  }
+}
+
 function createEmptyMistakeDraft() {
   return {
     wrongSentence: '',
@@ -380,7 +426,7 @@ function getMistakeSummary(mistakes) {
 const contentTypeConfig = {
   grammarTopics: { label: 'Grammar', icon: '📚', editable: true },
   speakingTopics: { label: 'Speaking', icon: '🎙️', editable: false },
-  businessPhrases: { label: 'Business Phrases', icon: '💼', editable: true },
+  businessPhrases: { label: 'Business Phrases', icon: '💼', editable: false },
   pronunciationSentences: { label: 'Pronunciation', icon: '🔊', editable: true },
   writingTemplates: { label: 'Writing Templates', icon: '✍️', editable: true },
   commonMistakes: { label: 'Mistakes', icon: '🧩', editable: false },
@@ -447,7 +493,11 @@ function getContentSearchText(item, type, progress = {}) {
 function getContentItemStatus(item, type, progress = {}) {
   if (type === 'speakingTopics') return progress[item.id]?.completed ? 'Completed' : 'Not Completed'
   if (type === 'commonMistakes') return item.status || 'New'
-  if (type === 'businessPhrases') return item.practiced ? 'Practiced' : 'Not Practiced'
+  if (type === 'businessPhrases') {
+    const phraseProgress = progress[item.id] || item
+    if (phraseProgress.favorite) return 'Favorite'
+    return phraseProgress.practiced ? 'Practiced' : 'New'
+  }
   if (type === 'writingTemplates') return 'Available'
   return item.completed ? 'Completed' : 'Not Completed'
 }
@@ -479,7 +529,13 @@ function filterContentItems(items, type, filters, progress = {}) {
     const matchesCategory = filters.category === allFilterValue || item.category === filters.category
     const matchesLevel = filters.level === allFilterValue || item.level === filters.level
     const matchesDifficulty = filters.difficulty === allFilterValue || item.difficulty === filters.difficulty
-    const matchesStatus = filters.status === allFilterValue || status === filters.status
+    const matchesStatus =
+      type === 'businessPhrases'
+        ? filters.status === allFilterValue ||
+          (filters.status === 'New' && !progress[item.id]?.practiced) ||
+          (filters.status === 'Practiced' && progress[item.id]?.practiced) ||
+          (filters.status === 'Favorite' && progress[item.id]?.favorite)
+        : filters.status === allFilterValue || status === filters.status
 
     return matchesSearch && matchesCategory && matchesLevel && matchesDifficulty && matchesStatus
   })
@@ -525,6 +581,7 @@ const defaultProgress = {
   learningPlan: defaultLearningPlan,
   speakingTopicsBank: defaultSpeakingTopics,
   speakingTopicProgress: {},
+  businessPhraseProgress: {},
   mistakes: normalizeMistakes(null, defaultContentLibrary.commonMistakes),
   contentLibrary: defaultContentLibrary,
   evaluationSkills: defaultEvaluationSkills,
@@ -579,6 +636,11 @@ function loadProgress() {
     speakingTopicsBank,
     contentLibrary.speakingTopics,
   )
+  const businessPhraseProgress = normalizeBusinessPhraseProgress(
+    saved.businessPhraseProgress,
+    defaultBusinessPhrases,
+    contentLibrary.businessPhrases,
+  )
   const completedPlanTasks = migrateCompletedDailyTasksToPlan(
     learningPlan,
     saved.completedDailyTasks,
@@ -596,6 +658,7 @@ function loadProgress() {
     mistakes,
     speakingTopicsBank,
     speakingTopicProgress,
+    businessPhraseProgress,
     completedPlanTasks,
     selectedMonth: Number(saved.selectedMonth || 1),
     selectedWeek: Number(saved.selectedWeek || 1),
@@ -629,6 +692,27 @@ function runSmokeTests() {
     'Smoke test failed: speaking topic IDs should be unique',
   )
   console.assert(defaultSpeakingTopics.every((topic) => topic.title), 'Smoke test failed: every speaking topic should have a title')
+  console.assert(defaultBusinessPhrases.length >= 150, 'Smoke test failed: default business phrase bank should have at least 150 phrases')
+  console.assert(
+    new Set(defaultBusinessPhrases.map((phrase) => phrase.id)).size === defaultBusinessPhrases.length,
+    'Smoke test failed: business phrase IDs should be unique',
+  )
+  console.assert(
+    defaultBusinessPhrases.every((phrase) => phrase.id && phrase.phrase),
+    'Smoke test failed: every business phrase should have id and phrase text',
+  )
+  console.assert(
+    Array.isArray(filterBusinessPhrases(defaultBusinessPhrases, createContentFilters(), {})),
+    'Smoke test failed: business phrase filters should not crash',
+  )
+  console.assert(
+    Object.keys(normalizeBusinessPhraseProgress({ 'phr-001': { practiced: true } }, defaultBusinessPhrases)).includes('phr-001'),
+    'Smoke test failed: business phrase progress should use stable IDs',
+  )
+  console.assert(
+    applyBusinessPhraseProgress(defaultBusinessPhrases, {}).length === defaultBusinessPhrases.length,
+    'Smoke test failed: missing business phrase progress should not crash',
+  )
   console.assert(
     Array.isArray(filterSpeakingTopics(defaultSpeakingTopics, {
       search: 'project',
@@ -745,8 +829,16 @@ function runSmokeTests() {
     'Smoke test failed: export payload should include rubric assessments and feedback loops',
   )
   console.assert(
+    createBackupPayload({ ...createDefaultProgress(), businessPhraseProgress: { 'phr-001': { practiced: true } } }).progress.businessPhraseProgress['phr-001'].practiced,
+    'Smoke test failed: export payload should include business phrase progress',
+  )
+  console.assert(
     parseAndNormalizeBackup(JSON.stringify({ progress: createDefaultProgress() }), defaultProgress, { emptyEvaluation, emptyWritingDraft, emptyListeningDraft, emptyPronunciationDraft, emptyNoteDraft, todayIso }).progress.feedbackLoops.length === 0,
     'Smoke test failed: import should handle missing feedback loops',
+  )
+  console.assert(
+    Object.keys(parseAndNormalizeBackup(JSON.stringify({ progress: createDefaultProgress() }), defaultProgress, { emptyEvaluation, emptyWritingDraft, emptyListeningDraft, emptyPronunciationDraft, emptyNoteDraft, todayIso }).progress.businessPhraseProgress || {}).length === 0,
+    'Smoke test failed: import should handle missing business phrase progress',
   )
   console.assert(normalizeMistakes([{ wrongSentence: 'Bad', correctSentence: 'Good' }]).length === 1, 'Smoke test failed: mistakes should normalize safely')
   console.assert(normalizeMistakes([{ wrongSentence: 'Bad' }]).every((mistake) => mistake.id), 'Smoke test failed: every mistake should have a stable id')
@@ -1096,6 +1188,8 @@ function App() {
     duration: allFilterValue,
   })
   const [selectedSpeakingTopicId, setSelectedSpeakingTopicId] = useState('')
+  const [businessPhraseFilters, setBusinessPhraseFilters] = useState(createContentFilters)
+  const [selectedBusinessPhraseId, setSelectedBusinessPhraseId] = useState('')
   const [mistakeFilters, setMistakeFilters] = useState({
     search: '',
     category: allFilterValue,
@@ -1134,6 +1228,8 @@ function App() {
   const mistakes = normalizeMistakes(progress.mistakes, contentLibrary.commonMistakes)
   const speakingTopicsBank = normalizeSpeakingTopics(progress.speakingTopicsBank, contentLibrary.speakingTopics)
   const speakingTopicProgress = progress.speakingTopicProgress || {}
+  const businessPhraseProgress = normalizeBusinessPhraseProgress(progress.businessPhraseProgress, defaultBusinessPhrases, contentLibrary.businessPhrases)
+  const businessPhrasesBank = applyBusinessPhraseProgress(defaultBusinessPhrases, businessPhraseProgress)
   const writingEntries = normalizeWritingEntries(progress.writingEntries)
   const listeningEntries = normalizeListeningEntries(progress.listeningEntries)
   const pronunciationEntries = normalizePronunciationEntries(progress.pronunciationEntries)
@@ -1163,7 +1259,8 @@ function App() {
   const dailyPlan = currentWeek.days.map((day) => ({ ...day, day: day.dayName }))
   const completedSpeakingTopics = speakingTopicsBank.filter((topic) => speakingTopicProgress[topic.id]?.completed).length
   const completedGrammarTopics = contentLibrary.grammarTopics.filter((topic) => topic.completed).length
-  const completedBusinessPhrases = contentLibrary.businessPhrases.filter((phrase) => phrase.practiced).length
+  const businessPhraseSummary = getBusinessPhraseSummary(defaultBusinessPhrases, businessPhraseProgress)
+  const completedBusinessPhrases = businessPhraseSummary.practiced
   const mistakeSummary = getMistakeSummary(mistakes)
   const reviewedCommonMistakes = mistakeSummary.fixedCount
   const weeklyCompletion = calculatePercentage(completedDailyTasks, totalDailyTasks)
@@ -1176,7 +1273,8 @@ function App() {
     evaluationSkills,
     mistakes,
     speakingTopicProgress,
-    contentLibrary,
+    businessPhraseProgress,
+    contentLibrary: { ...contentLibrary, businessPhrases: businessPhrasesBank },
   })
   const skillAverages = calculateSkillAverages(progress.evaluations, evaluationSkills)
   const skillTrends = calculateSkillTrends(progress.evaluations, evaluationSkills)
@@ -1208,6 +1306,8 @@ function App() {
     mistakes,
     speakingTopics: speakingTopicsBank,
     speakingTopicProgress,
+    businessPhrases: businessPhrasesBank,
+    businessPhraseProgress,
     contentLibrary,
     trackerData: {
       writingEntries,
@@ -1225,7 +1325,7 @@ function App() {
   const contentSummary = {
     grammarTopics: contentLibrary.grammarTopics.length,
     speakingTopics: speakingTopicsBank.length,
-    businessPhrases: contentLibrary.businessPhrases.length,
+    businessPhrases: businessPhrasesBank.length,
     pronunciationSentences: contentLibrary.pronunciationSentences.length,
     writingTemplates: contentLibrary.writingTemplates.length,
     commonMistakes: mistakes.length,
@@ -1294,7 +1394,10 @@ function App() {
     { label: 'Daily tasks', value: completedDailyTasks, total: totalDailyTasks, done: completedDailyTasks, icon: '✅' },
     { label: 'Speaking topics', value: completedSpeakingTopics, total: speakingTopicsBank.length, done: completedSpeakingTopics, icon: '🎙️' },
     { label: 'Grammar topics', value: completedGrammarTopics, total: contentLibrary.grammarTopics.length, done: completedGrammarTopics, icon: '📚' },
-    { label: 'Business phrases', value: completedBusinessPhrases, total: contentLibrary.businessPhrases.length, done: completedBusinessPhrases, icon: '💼' },
+    { label: 'Business phrases', value: completedBusinessPhrases, total: businessPhrasesBank.length, done: completedBusinessPhrases, icon: '💼' },
+    { label: 'Total business phrases', value: businessPhraseSummary.total, total: Math.max(businessPhraseSummary.total, 1), done: businessPhraseSummary.total, icon: '💼' },
+    { label: 'Favorite phrases', value: businessPhraseSummary.favorite, total: Math.max(businessPhraseSummary.total, 1), done: businessPhraseSummary.favorite, icon: '⭐' },
+    { label: 'Business phrase practiced %', value: `${businessPhraseSummary.practicedPercentage}%`, total: 100, done: businessPhraseSummary.practicedPercentage, icon: '📈' },
     { label: 'Common mistakes', value: reviewedCommonMistakes, total: mistakes.length, done: reviewedCommonMistakes, icon: '🧩' },
     { label: 'Active mistakes', value: mistakeSummary.activeCount, total: mistakes.length, done: mistakeSummary.activeCount, icon: '🔁' },
     { label: 'Weakest skill', value: latestEvaluation ? weakestSkill : 'Pending', total: 1, done: latestEvaluation ? 1 : 0, icon: '🎯' },
@@ -1313,18 +1416,28 @@ function App() {
   const speakingCategoryOptions = getUniqueOptions(speakingTopicsBank, 'category')
   const speakingDifficultyOptions = getUniqueOptions(speakingTopicsBank, 'difficulty')
   const speakingLevelOptions = getUniqueOptions(speakingTopicsBank, 'level')
+  const filteredBusinessPhrases = filterBusinessPhrases(defaultBusinessPhrases, businessPhraseFilters, businessPhraseProgress)
+  const selectedBusinessPhrase = businessPhrasesBank.find((phrase) => phrase.id === selectedBusinessPhraseId)
+  const businessCategoryOptions = getUniqueOptions(defaultBusinessPhrases, 'category')
+  const businessLevelOptions = getUniqueOptions(defaultBusinessPhrases, 'level')
+  const businessDifficultyOptions = getUniqueOptions(defaultBusinessPhrases, 'difficulty')
   const filteredMistakes = filterMistakes(mistakes, mistakeFilters)
   const mistakeSkillOptions = getUniqueOptions(mistakes, 'relatedSkill')
   const contentLibraryItems = {
     grammarTopics: contentLibrary.grammarTopics,
     speakingTopics: speakingTopicsBank,
-    businessPhrases: contentLibrary.businessPhrases,
+    businessPhrases: businessPhrasesBank,
     pronunciationSentences: contentLibrary.pronunciationSentences,
     writingTemplates: contentLibrary.writingTemplates,
     commonMistakes: mistakes,
   }
   const activeContentItems = contentLibraryItems[contentLibraryTab] || []
-  const filteredContentItems = filterContentItems(activeContentItems, contentLibraryTab, contentFilters, speakingTopicProgress)
+  const filteredContentItems = filterContentItems(
+    activeContentItems,
+    contentLibraryTab,
+    contentFilters,
+    contentLibraryTab === 'businessPhrases' ? businessPhraseProgress : speakingTopicProgress,
+  )
   const editingContentItem = activeContentItems.find((item) => item.id === editingContentItemId)
   const contentCategoryOptions = getUniqueOptions(activeContentItems, 'category')
   const contentLevelOptions = getUniqueOptions(activeContentItems, 'level')
@@ -1333,7 +1446,7 @@ function App() {
     contentLibraryTab === 'commonMistakes'
       ? [allFilterValue, ...mistakeStatuses]
       : contentLibraryTab === 'businessPhrases'
-        ? [allFilterValue, 'Practiced', 'Not Practiced']
+        ? [allFilterValue, 'New', 'Practiced', 'Favorite']
         : contentLibraryTab === 'writingTemplates'
           ? [allFilterValue, 'Available']
           : [allFilterValue, 'Completed', 'Not Completed']
@@ -1650,6 +1763,28 @@ function App() {
     })
   }
 
+  const updateBusinessPhraseProgress = (phraseId, changes) => {
+    setProgress((current) => {
+      const currentPhraseProgress = current.businessPhraseProgress?.[phraseId] || {}
+      const nextPhraseProgress = {
+        ...currentPhraseProgress,
+        ...changes,
+      }
+
+      if (changes.practiced !== undefined) {
+        nextPhraseProgress.lastPracticedAt = changes.practiced ? new Date().toISOString() : currentPhraseProgress.lastPracticedAt || ''
+      }
+
+      return {
+        ...current,
+        businessPhraseProgress: {
+          ...current.businessPhraseProgress,
+          [phraseId]: nextPhraseProgress,
+        },
+      }
+    })
+  }
+
   const updateSpeakingFilter = (field, value) => {
     setSpeakingFilters((current) => ({ ...current, [field]: value }))
   }
@@ -1670,6 +1805,25 @@ function App() {
     const sourceTopics = filteredSpeakingTopics.length ? filteredSpeakingTopics : speakingTopicsBank
     const topic = sourceTopics[Math.floor(Math.random() * sourceTopics.length)]
     if (topic) setSelectedSpeakingTopicId(topic.id)
+  }
+
+  const updateBusinessPhraseFilter = (field, value) => {
+    setBusinessPhraseFilters((current) => ({ ...current, [field]: value }))
+  }
+
+  const clearBusinessPhraseFilters = () => {
+    setBusinessPhraseFilters(createContentFilters())
+    setSelectedBusinessPhraseId('')
+  }
+
+  const selectRandomBusinessPhrase = () => {
+    if (!filteredBusinessPhrases.length) {
+      setSelectedBusinessPhraseId('')
+      return
+    }
+
+    const phrase = filteredBusinessPhrases[Math.floor(Math.random() * filteredBusinessPhrases.length)]
+    setSelectedBusinessPhraseId(phrase.id)
   }
 
   const updateMistakeDraft = (field, value) => {
@@ -1822,6 +1976,11 @@ function App() {
   }
 
   const updateContentItem = (collectionName, itemId, changes) => {
+    if (collectionName === 'businessPhrases') {
+      updateBusinessPhraseProgress(itemId, changes)
+      return
+    }
+
     setProgress((current) => ({
       ...current,
       contentLibrary: {
@@ -3675,7 +3834,7 @@ function App() {
                 )}
 
                 {filteredContentItems.map((item) => {
-                  const status = getContentItemStatus(item, contentLibraryTab, speakingTopicProgress)
+                  const status = getContentItemStatus(item, contentLibraryTab, contentLibraryTab === 'businessPhrases' ? businessPhraseProgress : speakingTopicProgress)
                   const isCompact = contentViewMode === 'list'
                   const title = item.title || item.phrase || item.sentence || item.wrongSentence || 'Content item'
                   const detail =
@@ -3725,6 +3884,19 @@ function App() {
                             <SelectInput label="Status" value={item.status} onChange={(value) => updateMistake(item.id, { status: value })} options={mistakeStatuses} />
                             <button type="button" onClick={() => handleNavigation('mistakes')} className="min-h-10 rounded-lg bg-slate-950 px-3 text-sm font-bold text-white">
                               Open
+                            </button>
+                          </>
+                        )}
+                        {contentLibraryTab === 'businessPhrases' && (
+                          <>
+                            <button type="button" onClick={() => updateBusinessPhraseProgress(item.id, { practiced: !businessPhraseProgress[item.id]?.practiced })} className="min-h-10 rounded-lg border border-teal-200 bg-teal-50 px-3 text-sm font-bold text-teal-800">
+                              {businessPhraseProgress[item.id]?.practiced ? 'Practiced' : 'Mark practiced'}
+                            </button>
+                            <button type="button" onClick={() => updateBusinessPhraseProgress(item.id, { favorite: !businessPhraseProgress[item.id]?.favorite })} className="min-h-10 rounded-lg border border-amber-200 bg-amber-50 px-3 text-sm font-bold text-amber-800">
+                              {businessPhraseProgress[item.id]?.favorite ? 'Favorite' : 'Add favorite'}
+                            </button>
+                            <button type="button" onClick={() => handleNavigation('phrases')} className="min-h-10 rounded-lg bg-slate-950 px-3 text-sm font-bold text-white">
+                              Practice
                             </button>
                           </>
                         )}
@@ -3970,22 +4142,99 @@ function App() {
         )}
 
         {activeTab === 'phrases' && (
-          <Card title="Business phrases" subtitle="Professional sentence bank" icon="💼">
-            <div className="grid gap-3">
-              {contentLibrary.businessPhrases.map((phrase) => (
-                <CheckboxRow
-                  key={phrase.id}
-                  checked={Boolean(phrase.practiced)}
-                  onChange={() => updateContentItem('businessPhrases', phrase.id, { practiced: !phrase.practiced })}
-                >
-                  <span>
-                    <strong className="text-slate-950">{phrase.phrase}</strong>
-                    <span className="mt-1 block text-xs text-slate-500">
-                      {phrase.category} · {phrase.useCase}
-                    </span>
-                  </span>
-                </CheckboxRow>
-              ))}
+          <Card title="Business phrases" subtitle={`${filteredBusinessPhrases.length} of ${defaultBusinessPhrases.length} phrases visible`} icon="💼">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <MetricCard label="Total phrases" value={businessPhraseSummary.total} detail="Expanded phrase bank" icon="💼" />
+              <MetricCard label="Practiced" value={businessPhraseSummary.practiced} detail={`${businessPhraseSummary.practicedPercentage}% complete`} icon="✅" />
+              <MetricCard label="Favorites" value={businessPhraseSummary.favorite} detail="Saved for reuse" icon="⭐" />
+              <MetricCard label="Filtered" value={filteredBusinessPhrases.length} detail="Current view" icon="🔎" />
+            </div>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-[1.2fr_repeat(4,0.8fr)_auto] xl:items-end">
+              <TextInput label="Search" value={businessPhraseFilters.search} onChange={(value) => updateBusinessPhraseFilter('search', value)} placeholder="Search phrase, example, use case, tag, skill, or notes" />
+              <SelectInput label="Category" value={businessPhraseFilters.category} onChange={(value) => updateBusinessPhraseFilter('category', value)} options={businessCategoryOptions} />
+              <SelectInput label="Level" value={businessPhraseFilters.level} onChange={(value) => updateBusinessPhraseFilter('level', value)} options={businessLevelOptions} />
+              <SelectInput label="Difficulty" value={businessPhraseFilters.difficulty} onChange={(value) => updateBusinessPhraseFilter('difficulty', value)} options={businessDifficultyOptions} />
+              <SelectInput label="Status" value={businessPhraseFilters.status} onChange={(value) => updateBusinessPhraseFilter('status', value)} options={[allFilterValue, 'New', 'Practiced', 'Favorite']} />
+              <button type="button" onClick={clearBusinessPhraseFilters} className="min-h-11 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+                Clear filters
+              </button>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 rounded-lg border border-teal-100 bg-teal-50 p-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-sm font-bold text-teal-950">Random phrase practice</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Pick from the currently filtered phrases.
+                </p>
+              </div>
+              <button type="button" onClick={selectRandomBusinessPhrase} className="min-h-11 rounded-lg bg-teal-700 px-4 text-sm font-bold text-white transition hover:bg-teal-800">
+                Random Phrase
+              </button>
+            </div>
+
+            {filteredBusinessPhrases.length === 0 && (
+              <div className="mt-5">
+                <EmptyState title="No business phrases match the current filters.">
+                  Clear filters or broaden your search before choosing a random phrase.
+                </EmptyState>
+              </div>
+            )}
+
+            {selectedBusinessPhrase && (
+              <article className="mt-5 rounded-lg border-2 border-teal-400 bg-white p-4 shadow-[0_12px_30px_rgba(13,148,136,0.14)]">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-700">Selected phrase</p>
+                <h3 className="mt-2 text-lg font-bold text-slate-950">{selectedBusinessPhrase.phrase}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{selectedBusinessPhrase.practicePrompt}</p>
+              </article>
+            )}
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              {filteredBusinessPhrases.map((phrase) => {
+                const phraseProgress = businessPhraseProgress[phrase.id] || {}
+                const isSelected = selectedBusinessPhraseId === phrase.id
+
+                return (
+                  <article key={phrase.id} className={`rounded-lg border bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)] ${isSelected ? 'border-teal-400 ring-2 ring-teal-100' : 'border-slate-200'}`}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">{phrase.category}</span>
+                          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-bold text-teal-800">{phrase.level}</span>
+                          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">{phrase.difficulty}</span>
+                        </div>
+                        <h3 className="mt-3 text-lg font-bold text-slate-950">{phrase.phrase}</h3>
+                      </div>
+                      <button type="button" onClick={() => updateBusinessPhraseProgress(phrase.id, { favorite: !phraseProgress.favorite })} className={`min-h-10 rounded-lg border px-3 text-sm font-bold ${phraseProgress.favorite ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-slate-200 bg-white text-slate-600'}`}>
+                        {phraseProgress.favorite ? 'Favorite' : 'Add favorite'}
+                      </button>
+                    </div>
+
+                    <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+                      <div><dt className="font-bold text-slate-950">Use case</dt><dd className="mt-1 leading-6 text-slate-600">{phrase.useCase}</dd></div>
+                      <div><dt className="font-bold text-slate-950">Example</dt><dd className="mt-1 leading-6 text-slate-600">{phrase.example}</dd></div>
+                      <div><dt className="font-bold text-slate-950">Related skills</dt><dd className="mt-1 leading-6 text-slate-600">{phrase.relatedSkills?.join(', ') || 'Not specified'}</dd></div>
+                      <div><dt className="font-bold text-slate-950">Practice prompt</dt><dd className="mt-1 leading-6 text-slate-600">{phrase.practicePrompt}</dd></div>
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {(phrase.tags || []).map((tag) => (
+                        <span key={tag} className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-bold text-slate-500">{tag}</span>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 grid gap-4 md:grid-cols-[auto_1fr] md:items-start">
+                      <CheckboxRow
+                        checked={Boolean(phraseProgress.practiced)}
+                        onChange={() => updateBusinessPhraseProgress(phrase.id, { practiced: !phraseProgress.practiced })}
+                      >
+                        <span className="font-semibold text-slate-700">Practiced</span>
+                      </CheckboxRow>
+                      <TextArea label="Notes" rows={3} value={phraseProgress.notes || ''} onChange={(value) => updateBusinessPhraseProgress(phrase.id, { notes: value })} />
+                    </div>
+                  </article>
+                )
+              })}
             </div>
           </Card>
         )}
@@ -4187,6 +4436,7 @@ function App() {
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <MetricCard label="Speaking Practice" value={`${teacherReportData.speaking.completed}/${teacherReportData.speaking.total}`} detail={`${teacherReportData.speaking.completionPercentage}% complete`} icon="🎙️" />
+              <MetricCard label="Business Phrases" value={`${teacherReportData.businessPhrases.practiced}/${teacherReportData.businessPhrases.total}`} detail={`${teacherReportData.businessPhrases.completionPercentage}% practiced, ${teacherReportData.businessPhrases.favorites} favorite`} icon="💼" />
               <MetricCard label="Writing Practice" value={teacherReportData.writing.total} detail={`Completed ${teacherReportData.writing.completed}, avg ${teacherReportData.writing.averageScore || 'N/A'}/5`} icon="✍️" />
               <MetricCard label="Listening Practice" value={teacherReportData.listening.total} detail={`${teacherReportData.listening.totalMinutes} minutes, avg ${teacherReportData.listening.averageScore || 'N/A'}/5`} icon="🎧" />
               <MetricCard label="Pronunciation" value={teacherReportData.pronunciation.total} detail={`Clarity ${teacherReportData.pronunciation.averageScore || 'N/A'}, confidence ${teacherReportData.pronunciation.averageConfidence || 'N/A'}`} icon="🔊" />

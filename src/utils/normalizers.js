@@ -13,6 +13,7 @@ import { migrateCompletedDailyTasksToPlan, normalizeLearningPlan } from './planU
 import { cloneData } from './storage'
 import { normalizeTeacherNotes } from './teacherReport'
 import { cefrRubrics } from '../config'
+import { defaultBusinessPhrases } from '../config/defaultBusinessPhrases'
 import { normalizeFeedbackLoops, normalizeRubricAssessments } from './cefrFeedback'
 
 export const mistakeCategories = [
@@ -258,6 +259,48 @@ export function normalizeSpeakingTopicProgress(progress = {}, speakingTopics = [
   return normalized
 }
 
+export function normalizeBusinessPhraseProgress(progress = {}, businessPhrases = defaultBusinessPhrases, legacyPhrases = []) {
+  const source = progress && typeof progress === 'object' ? progress : {}
+  const normalized = {}
+  const legacyItems = Array.isArray(legacyPhrases) ? legacyPhrases : []
+
+  businessPhrases.forEach((phrase) => {
+    const saved = source[phrase.id] || {}
+    const legacyPhrase = legacyItems.find((item) => item.id === phrase.id)
+    const practiced = Boolean(saved.practiced || legacyPhrase?.practiced)
+    const favorite = Boolean(saved.favorite || legacyPhrase?.favorite)
+    const notes = typeof saved.notes === 'string' ? saved.notes : legacyPhrase?.notes || ''
+    const lastPracticedAt = saved.lastPracticedAt || legacyPhrase?.lastPracticedAt || (practiced ? new Date().toISOString() : '')
+
+    if (practiced || favorite || notes || lastPracticedAt) {
+      normalized[phrase.id] = {
+        practiced,
+        favorite,
+        notes,
+        lastPracticedAt: practiced ? lastPracticedAt : '',
+      }
+    }
+  })
+
+  return normalized
+}
+
+export function applyBusinessPhraseProgress(businessPhrases = defaultBusinessPhrases, progress = {}) {
+  const source = progress && typeof progress === 'object' ? progress : {}
+
+  return businessPhrases.map((phrase) => {
+    const phraseProgress = source[phrase.id] || {}
+
+    return {
+      ...phrase,
+      practiced: Boolean(phraseProgress.practiced),
+      favorite: Boolean(phraseProgress.favorite),
+      notes: phraseProgress.notes || '',
+      lastPracticedAt: phraseProgress.lastPracticedAt || '',
+    }
+  })
+}
+
 function normalizeScore(value) {
   if (value === '' || value === null || value === undefined) return ''
   const score = Number(value)
@@ -383,6 +426,11 @@ export function normalizeImportedProgress(imported, defaultProgress, emptyDrafts
     speakingTopicsBank,
     contentLibrary.speakingTopics,
   )
+  const businessPhraseProgress = normalizeBusinessPhraseProgress(
+    source.businessPhraseProgress,
+    defaultBusinessPhrases,
+    contentLibrary.businessPhrases,
+  )
 
   return {
     ...createDefaultProgress(defaultProgress, emptyDrafts),
@@ -395,6 +443,7 @@ export function normalizeImportedProgress(imported, defaultProgress, emptyDrafts
     mistakes,
     speakingTopicsBank,
     speakingTopicProgress,
+    businessPhraseProgress,
     selectedMonth: Number(source.selectedMonth || 1),
     selectedWeek: Number(source.selectedWeek || 1),
     contentLibrary,

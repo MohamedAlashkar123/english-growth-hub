@@ -119,6 +119,7 @@ export function generateLearningRecommendation({
   mistakes = [],
   speakingTopics = [],
   speakingTopicProgress = {},
+  businessPhraseProgress = {},
   contentLibrary = {},
   trackerData = {},
   rubricAssessments = [],
@@ -258,7 +259,7 @@ export function generateLearningRecommendation({
     const targetSection = mapSkillToSection(weakestSkill.name)
     const recommendedSpeakingTopic = getRecommendedSpeakingTopic(speakingTopics, speakingTopicProgress, profile)
     const grammarTopic = findGrammarTopic(contentLibrary, weakestSkill.name)
-    const phrase = contentLibrary.businessPhrases?.find((item) => !item.practiced) || contentLibrary.businessPhrases?.[0]
+    const phrase = contentLibrary.businessPhrases?.find((item) => !(businessPhraseProgress[item.id]?.practiced || item.practiced)) || contentLibrary.businessPhrases?.[0]
     const pronunciation = contentLibrary.pronunciationSentences?.find((item) => !item.completed) || contentLibrary.pronunciationSentences?.[0]
     const writingTemplate = contentLibrary.writingTemplates?.[0]
     const writingCount = trackerData.writingEntries?.length || 0
@@ -285,7 +286,10 @@ export function generateLearningRecommendation({
       targetSection,
       relatedSkill: weakestSkill.name,
       relatedContentId: recommendedSpeakingTopic?.id || grammarTopic?.id || phrase?.id || pronunciation?.id || writingTemplate?.id || '',
-      evidence: [`Latest evaluation shows ${weakestSkill.name} score is ${weakestSkill.score}/5.`],
+      evidence: [
+        `Latest evaluation shows ${weakestSkill.name} score is ${weakestSkill.score}/5.`,
+        targetSection === 'Business Phrases' && phrase ? `Recommended unpracticed phrase: ${phrase.phrase}` : '',
+      ].filter(Boolean),
     })
   }
 
